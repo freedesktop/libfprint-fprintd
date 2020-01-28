@@ -150,9 +150,20 @@ static void fprint_device_finalize(GObject *object)
 	FprintDevice *self = (FprintDevice *) object;
 	FprintDevicePrivate *priv = fprint_device_get_instance_private(self);
 
-	g_hash_table_destroy (priv->clients);
+	/* FIXME: Cancel on-going operations */
+
+	g_clear_object (&priv->dev);
+
+	/* FIXME: Free DBusGMethodInvocation inside session ? */
 	g_clear_pointer(&priv->session, session_data_free);
-	/* FIXME close and stuff */
+
+	g_clear_pointer (&priv->clients, g_hash_table_destroy);
+	g_clear_object (&priv->auth);
+	g_clear_object (&priv->verify_data);
+	g_clear_pointer (&priv->identify_data, g_ptr_array_unref);
+	g_clear_object (&priv->current_cancellable);
+
+	/* FIXME: Free DBusGMethodInvocation current_cancel_context ? */
 
 	G_OBJECT_CLASS(fprint_device_parent_class)->finalize(object);
 }
