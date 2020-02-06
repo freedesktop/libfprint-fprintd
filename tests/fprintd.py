@@ -538,6 +538,29 @@ class FPrintdVirtualDeviceTest(FPrintdTest):
         self.device.VerifyStart('(s)', 'left-thumb')
         self.device.VerifyStop()
 
+    def test_busy_device_release_on_enroll(self):
+        self.device.Claim('(s)', 'testuser')
+        self.device.EnrollStart('(s)', 'left-index-finger')
+
+        self.device.Release()
+        self.wait_for_result(expected='enroll-failed')
+
+    def test_busy_device_release_on_verify(self):
+        self.device.Claim('(s)', 'testuser')
+        self.enroll_image('whorl', finger='left-index-finger')
+        self.device.VerifyStart('(s)', 'any')
+
+        self.device.Release()
+        self.wait_for_result(expected='verify-no-match')
+
+    def test_busy_device_release_on_verify_finger(self):
+        self.device.Claim('(s)', 'testuser')
+        self.enroll_image('whorl', finger='left-middle-finger')
+        self.device.VerifyStart('(s)', 'left-middle-finger')
+
+        self.device.Release()
+        self.wait_for_result(expected='verify-no-match')
+
 
 if __name__ == '__main__':
     if len(sys.argv) == 2 and sys.argv[1] == "list-tests":
