@@ -307,8 +307,8 @@ class FPrintdVirtualDeviceTest(FPrintdTest):
                 self._abort = params[1]
                 self._last_result = params[0]
 
-                if not self._abort and self._last_result == 'enroll-stage-passed':
-                    self.send_image('whorl')
+                if not self._abort and self._last_result.startswith('enroll-'):
+                    self._abort = True
                 elif self._abort:
                     pass
                 else:
@@ -354,8 +354,11 @@ class FPrintdVirtualDeviceTest(FPrintdTest):
     def enroll_image(self, img, finger='right-index-finger'):
         self.device.EnrollStart('(s)', finger)
 
-        self.send_image(img)
-        self.wait_for_result()
+        stages = self.device.get_cached_property('num-enroll-stages').unpack()
+        for stage in range(stages):
+            self.send_image(img)
+            self.wait_for_result(
+                'enroll-stage-passed' if stage < stages-1 else 'enroll-completed')
 
         self.device.EnrollStop()
         self.assertEqual(self._last_result, 'enroll-completed')
