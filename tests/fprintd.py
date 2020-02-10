@@ -519,6 +519,13 @@ class FPrintdVirtualDeviceTest(FPrintdTest):
 
         self.device.Release()
 
+    def test_enroll_stop_cancels(self):
+        self.device.Claim('(s)', 'testuser')
+        self.device.EnrollStart('(s)', 'left-index-finger')
+        self.device.EnrollStop()
+        self.wait_for_result(expected='enroll-failed')
+
+
 if __name__ == '__main__':
     if len(sys.argv) == 2 and sys.argv[1] == "list-tests":
         for machine, human in list_tests():

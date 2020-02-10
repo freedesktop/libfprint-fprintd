@@ -381,6 +381,8 @@ enroll_result_to_name (gboolean completed, gboolean enrolled, GError *error)
 			return "enroll-disconnected";
 		else if (g_error_matches (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_DATA_FULL))
 			return "enroll-data-full";
+		else if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+			return "enroll-failed";
 
 		return "enroll-unknown-error";
 	}
