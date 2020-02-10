@@ -525,6 +525,19 @@ class FPrintdVirtualDeviceTest(FPrintdTest):
         self.device.EnrollStop()
         self.wait_for_result(expected='enroll-failed')
 
+    def test_verify_stop_cancels(self):
+        self.device.Claim('(s)', 'testuser')
+        self.enroll_image('whorl')
+        self.device.VerifyStart('(s)', 'any')
+        self.device.VerifyStop()
+        self.wait_for_result(expected='verify-no-match')
+
+    def test_verify_finger_stop_cancels(self):
+        self.device.Claim('(s)', 'testuser')
+        self.enroll_image('whorl', finger='left-thumb')
+        self.device.VerifyStart('(s)', 'left-thumb')
+        self.device.VerifyStop()
+
 
 if __name__ == '__main__':
     if len(sys.argv) == 2 and sys.argv[1] == "list-tests":

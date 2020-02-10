@@ -345,6 +345,8 @@ verify_result_to_name (gboolean match, GError *error)
 		 */
 		if (g_error_matches (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO))
 			return "verify-disconnect";
+		else if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+			return "verify-no-match";
 
 		return "verify-unknown-error";
 	}
