@@ -1348,13 +1348,14 @@ static void fprint_device_list_enrolled_fingers(FprintDevice *rdev,
 	dbus_g_method_return(context, g_ptr_array_free (ret, FALSE));
 }
 
-static void delete_enrolled_fingers(FprintDevice *rdev, const char *user)
+static
+gboolean delete_enrolled_fingers (FprintDevice *rdev,
+				  const char *user,
+				  GError **error)
 {
 	FprintDevicePrivate *priv = fprint_device_get_instance_private(rdev);
 	guint i;
 
-	/* First try deleting the print from the device, we don't consider it
-	 * fatal if this does not work. */
 	if (fp_device_has_storage (priv->dev)) {
 		g_autoptr(GSList) prints = NULL;
 		GSList *l;
@@ -1370,11 +1371,17 @@ static void delete_enrolled_fingers(FprintDevice *rdev, const char *user)
 			                      &print);
 
 			if (print) {
-				g_autoptr(GError) error = NULL;
+				g_autoptr(GError) local_error = NULL;
 
-				if (!fp_device_delete_print_sync (priv->dev, print, NULL, &error)) {
-					g_warning ("Error deleting print from device: %s", error->message);
+				if (!fp_device_delete_print_sync (priv->dev, print, NULL, &local_error)) {
+					g_set_error (error,
+						     FPRINT_ERROR,
+						     FPRINT_ERROR_INTERNAL,
+						     "Error deleting print from device: %s",
+						     local_error->message);
+					g_warning ("%s", (*error)->message);
 					g_warning ("This might indicate an issue in the libfprint driver or in the fingerprint device.");
+					return FALSE;
 				}
 			}
 		}
@@ -1383,6 +1390,8 @@ static void delete_enrolled_fingers(FprintDevice *rdev, const char *user)
 	for (i = FP_FINGER_FIRST; i <= FP_FINGER_LAST; i++) {
 		store.print_data_delete(priv->dev, i, user);
 	}
+
+	return TRUE;
 }
 
 #ifdef __linux__
@@ -1484,7 +1493,17 @@ static void fprint_device_delete_enrolled_fingers(FprintDevice *rdev,
 		}
 	}
 
-	delete_enrolled_fingers (rdev, user);
+	if (delete_enrolled_fingers (rdev, user, &error) == FALSE) {
+		g_free (user);
+		dbus_g_method_return_error (context, error);
+		g_clear_error (&error);
+
+		if (!fp_device_close_sync (priv->dev, NULL, &error)) {
+			g_warning("Error while closing device: %s", error->message);
+			g_error_free (error);
+		}
+		return;
+	}
 
 	if (!opened && fp_device_has_storage (priv->dev)) {
 		if (!fp_device_close_sync (priv->dev, NULL, &error)) {
@@ -1520,7 +1539,11 @@ static void fprint_device_delete_enrolled_fingers2(FprintDevice *rdev,
 		return;
 	}
 
-	delete_enrolled_fingers (rdev, priv->session->username);
+	if (delete_enrolled_fingers (rdev, priv->session->username, &error) == FALSE) {
+		dbus_g_method_return_error (context, error);
+		g_error_free (error);
+		return;
+	}
 
 	dbus_g_method_return(context);
 }
