@@ -1469,13 +1469,37 @@ static void fprint_device_delete_enrolled_fingers(FprintDevice *rdev,
 	_fprint_device_add_client (rdev, sender);
 	g_free (sender);
 
-	if (!opened && fp_device_has_storage (priv->dev))
-		fp_device_open_sync (priv->dev, NULL, NULL);
+	if (!opened && fp_device_has_storage (priv->dev)) {
+		if (!fp_device_open_sync (priv->dev, NULL, &error)) {
+			g_autoptr(GError) dbus_error = NULL;
+
+			dbus_error = g_error_new (FPRINT_ERROR,
+						  FPRINT_ERROR_INTERNAL,
+						  "Open failed with error: %s",
+						  error->message);
+			dbus_g_method_return_error (context, dbus_error);
+			g_error_free (error);
+			g_free (user);
+			return;
+		}
+	}
 
 	delete_enrolled_fingers (rdev, user);
 
-	if (!opened && fp_device_has_storage (priv->dev))
-		fp_device_close_sync (priv->dev, NULL, NULL);
+	if (!opened && fp_device_has_storage (priv->dev)) {
+		if (!fp_device_close_sync (priv->dev, NULL, &error)) {
+			g_autoptr(GError) dbus_error = NULL;
+
+			dbus_error = g_error_new (FPRINT_ERROR,
+						  FPRINT_ERROR_INTERNAL,
+						  "Close failed with error: %s",
+						  error->message);
+			dbus_g_method_return_error (context, dbus_error);
+			g_error_free (error);
+			g_free (user);
+			return;
+		}
+	}
 
 	dbus_g_method_return(context);
 }
