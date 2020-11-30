@@ -31,11 +31,15 @@ import pwd
 import shutil
 import socket
 import struct
-import dbusmock
-import gi
-gi.require_version('FPrint', '2.0')
-from gi.repository import GLib, Gio, FPrint
-import cairo
+try:
+    import dbusmock
+    import gi
+    gi.require_version('FPrint', '2.0')
+    from gi.repository import GLib, Gio, FPrint
+    import cairo
+except Exception as e:
+    print("Missing dependencies: %s" % str(e))
+    sys.exit(77)
 
 try:
     from subprocess import DEVNULL

@@ -16,13 +16,17 @@ import unittest
 import sys
 import subprocess
 import dbus
-import dbusmock
 import fcntl
 import glob
 import os
 import shutil
 import time
-import pypamtest
+try:
+    import dbusmock
+    import pypamtest
+except Exception as e:
+    print("Missing dependencies: %s" % str(e))
+    sys.exit(77)
 
 PAM_SUCCESS = 0
 PAM_AUTH_ERR = 7
