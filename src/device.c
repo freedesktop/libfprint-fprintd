@@ -639,6 +639,8 @@ _fprint_device_check_polkit_for_action (FprintDevice          *rdev,
                                         GError               **error)
 {
   FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+  PolkitCheckAuthorizationFlags flags = POLKIT_CHECK_AUTHORIZATION_FLAGS_NONE;
+  GDBusMessage *message;
   const char *sender;
 
   g_autoptr(GError) local_error = NULL;
@@ -649,11 +651,15 @@ _fprint_device_check_polkit_for_action (FprintDevice          *rdev,
   sender = g_dbus_method_invocation_get_sender (invocation);
   subject = polkit_system_bus_name_new (sender);
 
+  message = g_dbus_method_invocation_get_message (invocation);
+  if (g_dbus_message_get_flags (message) & G_DBUS_MESSAGE_FLAGS_ALLOW_INTERACTIVE_AUTHORIZATION)
+    flags |= POLKIT_CHECK_AUTHORIZATION_FLAGS_ALLOW_USER_INTERACTION;
+
   result = polkit_authority_check_authorization_sync (priv->auth,
                                                       subject,
                                                       action,
                                                       NULL,
-                                                      POLKIT_CHECK_AUTHORIZATION_FLAGS_ALLOW_USER_INTERACTION,
+                                                      flags,
                                                       NULL, &local_error);
   if (result == NULL)
     {
