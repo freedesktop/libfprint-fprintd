@@ -1028,6 +1028,45 @@ fprint_device_release (FprintDBusDevice      *dbus_dev,
   return TRUE;
 }
 
+/* NOTE: This should probably be moved to the storage layer. */
+static GPtrArray *
+load_all_prints (FprintDevice *rdev)
+{
+  g_autoptr(GPtrArray) res = g_ptr_array_new_with_free_func (g_object_unref);
+  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+  GSList *user, *users = NULL;
+
+  users = store.discover_users ();
+
+  for (user = users; user; user = user->next)
+    {
+      const char *username = user->data;
+      g_autoptr(GSList) fingers = NULL;
+      GSList *finger;
+
+      fingers = store.discover_prints (priv->dev, username);
+
+      for (finger = fingers; finger; finger = finger->next)
+        {
+          g_autoptr(FpPrint) print = NULL;
+
+          store.print_data_load (priv->dev,
+                                 GPOINTER_TO_UINT (finger->data),
+                                 username,
+                                 &print);
+
+          if (!print)
+            continue;
+
+          g_ptr_array_add (res, g_steal_pointer (&print));
+        }
+    }
+
+  g_slist_free_full (users, g_free);
+
+  return g_steal_pointer (&res);
+}
+
 static void
 report_verify_status (FprintDevice *rdev,
                       gboolean      match,
@@ -1529,8 +1568,9 @@ try_delete_print (FprintDevice *rdev)
 {
   g_autoptr(GError) error = NULL;
   g_autoptr(GPtrArray) device_prints = NULL;
+  g_autoptr(GPtrArray) host_prints = NULL;
   FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
-  GSList *users, *user;
+  guint i;
 
   device_prints = fp_device_list_prints_sync (priv->dev, NULL, &error);
   if (!device_prints)
@@ -1545,41 +1585,21 @@ try_delete_print (FprintDevice *rdev)
    * With randomization if we can't sort them. */
   g_ptr_array_sort (device_prints, garbage_collect_sort);
 
-  users = store.discover_users ();
+  host_prints = load_all_prints (rdev);
 
-  for (user = users; user; user = user->next)
+  for (i = 0; i < host_prints->len; i++)
     {
-      const char *username = user->data;
-      g_autoptr(GSList) fingers = NULL;
-      GSList *finger;
+      guint index;
 
-      fingers = store.discover_prints (priv->dev, username);
+      if (!g_ptr_array_find_with_equal_func (device_prints,
+                                             g_ptr_array_index (host_prints, i),
+                                             (GEqualFunc) fp_print_equal,
+                                             &index))
+        continue;
 
-      for (finger = fingers; finger; finger = finger->next)
-        {
-          g_autoptr(FpPrint) print = NULL;
-          guint index;
-
-          store.print_data_load (priv->dev,
-                                 GPOINTER_TO_UINT (finger->data),
-                                 username,
-                                 &print);
-
-          if (!print)
-            continue;
-
-          if (!g_ptr_array_find_with_equal_func (device_prints,
-                                                 print,
-                                                 (GEqualFunc) fp_print_equal,
-                                                 &index))
-            continue;
-
-          /* Found an equal print, remove it */
-          g_ptr_array_remove_index (device_prints, index);
-        }
+      /* Found an equal print, remove it */
+      g_ptr_array_remove_index (device_prints, index);
     }
-
-  g_slist_free_full (users, g_free);
 
   g_debug ("Device has %d prints stored that we do not need", device_prints->len);
   if (device_prints->len == 0)
