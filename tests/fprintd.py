@@ -291,11 +291,23 @@ class FPrintdTest(dbusmock.DBusTestCase):
         self.addCleanup(shutil.rmtree, self.test_dir)
         self.state_dir = os.path.join(self.test_dir, 'state')
         self.run_dir = os.path.join(self.test_dir, 'run')
-        os.environ['FP_DRIVERS_WHITELIST'] = 'virtual_image'
+        self.device_driver = 'virtual_image'
+        self.device_id = 0
+        os.environ['FP_DRIVERS_WHITELIST'] = self.device_driver
 
     def assertFprintError(self, fprint_error):
         return self.assertRaisesRegex(GLib.Error,
             '.*net\.reactivated\.Fprint\.Error\.{}.*'.format(fprint_error))
+
+    def get_print_file_path(self, user, finger):
+        return os.path.join(self.state_dir, user, self.device_driver,
+            str(self.device_id), str(int(finger)))
+
+    def assertFingerInStorage(self, user, finger):
+        self.assertTrue(os.path.exists(self.get_print_file_path(user, finger)))
+
+    def assertFingerNotInStorage(self, user, finger):
+        self.assertFalse(os.path.exists(self.get_print_file_path(user, finger)))
 
     # From libfprint tests
     def send_retry(self, retry_error=FPrint.DeviceRetry.TOO_SHORT, con=None):
@@ -1110,8 +1122,7 @@ class FPrintdVirtualDeviceClaimedTest(FPrintdVirtualDeviceBaseTest):
             self.device.ListEnrolledFingers('(s)', 'nottestuser')
 
         self.enroll_image('whorl')
-
-        self.assertTrue(os.path.exists(os.path.join(self.state_dir, 'testuser/virtual_image/0/7')))
+        self.assertFingerInStorage('testuser', FPrint.Finger.RIGHT_INDEX)
 
         with self.assertFprintError('NoEnrolledPrints'):
             self.device.ListEnrolledFingers('(s)', 'nottestuser')
@@ -1148,7 +1159,7 @@ class FPrintdVirtualDeviceClaimedTest(FPrintdVirtualDeviceBaseTest):
         # And delete the print(s) again
         self.device.DeleteEnrolledFingers('(s)', 'testuser')
 
-        self.assertFalse(os.path.exists(os.path.join(self.state_dir, 'testuser/virtual_image/0/7')))
+        self.assertFingerNotInStorage('testuser', FPrint.Finger.RIGHT_INDEX)
 
         with self.assertFprintError('NoEnrolledPrints'):
             self.device.ListEnrolledFingers('(s)', 'testuser')
@@ -1156,12 +1167,12 @@ class FPrintdVirtualDeviceClaimedTest(FPrintdVirtualDeviceBaseTest):
     def test_enroll_delete2(self):
         self.enroll_image('whorl')
 
-        self.assertTrue(os.path.exists(os.path.join(self.state_dir, 'testuser/virtual_image/0/7')))
+        self.assertFingerInStorage('testuser', FPrint.Finger.RIGHT_INDEX)
 
         # And delete the print(s) again using the new API
         self.device.DeleteEnrolledFingers2()
 
-        self.assertFalse(os.path.exists(os.path.join(self.state_dir, 'testuser/virtual_image/0/7')))
+        self.assertFingerNotInStorage('testuser', FPrint.Finger.RIGHT_INDEX)
         self.assertFalse(os.path.exists(os.path.join(self.state_dir, 'testuser')))
         self.assertTrue(os.path.exists(self.state_dir))
 
