@@ -1110,6 +1110,52 @@ can_start_action (FprintDevice *rdev, GError **error)
   return FALSE;
 }
 
+static gboolean
+can_stop_action (FprintDevice      *rdev,
+                 FprintDeviceAction action,
+                 GError           **error)
+{
+  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+
+  switch (priv->current_action)
+    {
+    case ACTION_IDENTIFY:
+    case ACTION_VERIFY:
+      if (action == ACTION_IDENTIFY || action == ACTION_VERIFY)
+        return TRUE;
+      break;
+
+    default:
+      if (priv->current_action == action)
+        return TRUE;
+    }
+
+  if (priv->current_action != ACTION_NONE)
+    {
+      g_set_error (error, FPRINT_ERROR, FPRINT_ERROR_ALREADY_IN_USE,
+                   "Another operation is already in progress");
+      return FALSE;
+    }
+
+  switch (action)
+    {
+    case ACTION_ENROLL:
+      g_set_error (error, FPRINT_ERROR, FPRINT_ERROR_NO_ACTION_IN_PROGRESS,
+                   "No enrollment in progress");
+      return FALSE;
+
+    case ACTION_VERIFY:
+      g_set_error (error, FPRINT_ERROR, FPRINT_ERROR_NO_ACTION_IN_PROGRESS,
+                   "No verification in progress");
+      return FALSE;
+
+    default:
+      g_set_error (error, FPRINT_ERROR, FPRINT_ERROR_NO_ACTION_IN_PROGRESS,
+                   "No action in progress");
+      return FALSE;
+    }
+}
+
 static void
 stoppable_action_completed (FprintDevice *rdev)
 {
@@ -1396,7 +1442,6 @@ fprint_device_verify_stop (FprintDBusDevice      *dbus_dev,
                            GDBusMethodInvocation *invocation)
 {
   FprintDevice *rdev = FPRINT_DEVICE (dbus_dev);
-  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
 
   g_autoptr(GError) error = NULL;
 
@@ -1406,24 +1451,9 @@ fprint_device_verify_stop (FprintDBusDevice      *dbus_dev,
       return TRUE;
     }
 
-  switch (priv->current_action)
+  if (!can_stop_action (rdev, ACTION_VERIFY, &error))
     {
-    case ACTION_VERIFY:
-    case ACTION_IDENTIFY:
-      break;
-
-    case ACTION_NONE:
-      g_dbus_method_invocation_return_error_literal (
-        invocation, FPRINT_ERROR,
-        FPRINT_ERROR_NO_ACTION_IN_PROGRESS,
-        "No verification in progress");
-      return TRUE;
-
-    default:
-      g_dbus_method_invocation_return_error_literal (
-        invocation, FPRINT_ERROR,
-        FPRINT_ERROR_ALREADY_IN_USE,
-        "Another operation is already in progress");
+      g_dbus_method_invocation_return_gerror (invocation, error);
       return TRUE;
     }
 
@@ -1709,7 +1739,6 @@ fprint_device_enroll_stop (FprintDBusDevice      *dbus_dev,
                            GDBusMethodInvocation *invocation)
 {
   FprintDevice *rdev = FPRINT_DEVICE (dbus_dev);
-  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
 
   g_autoptr(GError) error = NULL;
 
@@ -1719,23 +1748,9 @@ fprint_device_enroll_stop (FprintDBusDevice      *dbus_dev,
       return TRUE;
     }
 
-  switch (priv->current_action)
+  if (!can_stop_action (rdev, ACTION_ENROLL, &error))
     {
-    case ACTION_ENROLL:
-      break;
-
-    case ACTION_NONE:
-      g_dbus_method_invocation_return_error_literal (
-        invocation, FPRINT_ERROR,
-        FPRINT_ERROR_NO_ACTION_IN_PROGRESS,
-        "No enrollment in progress");
-      return TRUE;
-
-    default:
-      g_dbus_method_invocation_return_error_literal (
-        invocation, FPRINT_ERROR,
-        FPRINT_ERROR_ALREADY_IN_USE,
-        "Another operation is already in progress");
+      g_dbus_method_invocation_return_gerror (invocation, error);
       return TRUE;
     }
 
