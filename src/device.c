@@ -1152,6 +1152,23 @@ stoppable_action_completed (FprintDevice *rdev)
 }
 
 static void
+stoppable_action_stop (FprintDevice          *rdev,
+                       GDBusMethodInvocation *invocation)
+{
+  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+
+  g_assert (priv->current_cancel_invocation == NULL);
+
+  priv->current_cancel_invocation = invocation;
+
+  /* We return only when the action was cancelled */
+  if (priv->current_cancellable)
+    g_cancellable_cancel (priv->current_cancellable);
+  else
+    stoppable_action_completed (rdev);
+}
+
+static void
 match_cb (FpDevice *device,
           FpPrint  *match,
           FpPrint  *print,
@@ -1410,12 +1427,7 @@ fprint_device_verify_stop (FprintDBusDevice      *dbus_dev,
       return TRUE;
     }
 
-  priv->current_cancel_invocation = invocation;
-  if (priv->current_cancellable)
-    /* We return only when the action was cancelled */
-    g_cancellable_cancel (priv->current_cancellable);
-  else
-    stoppable_action_completed (rdev);
+  stoppable_action_stop (rdev, invocation);
 
   return TRUE;
 }
@@ -1727,15 +1739,11 @@ fprint_device_enroll_stop (FprintDBusDevice      *dbus_dev,
       return TRUE;
     }
 
-  priv->current_cancel_invocation = invocation;
-  if (priv->current_cancellable)
-    /* We return only when the action was cancelled */
-    g_cancellable_cancel (priv->current_cancellable);
-  else
-    stoppable_action_completed (rdev);
+  stoppable_action_stop (rdev, invocation);
 
   return TRUE;
 }
+
 static gboolean
 fprint_device_list_enrolled_fingers (FprintDBusDevice      *dbus_dev,
                                      GDBusMethodInvocation *invocation,
