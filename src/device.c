@@ -1116,21 +1116,23 @@ can_stop_action (FprintDevice      *rdev,
                  GError           **error)
 {
   FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+  gboolean action_matches;
 
   switch (priv->current_action)
     {
     case ACTION_IDENTIFY:
     case ACTION_VERIFY:
-      if (action == ACTION_IDENTIFY || action == ACTION_VERIFY)
-        return TRUE;
+      action_matches = (action == ACTION_VERIFY || action == ACTION_IDENTIFY);
       break;
 
     default:
-      if (priv->current_action == action)
-        return TRUE;
+      action_matches = priv->current_action == action;
     }
 
-  if (priv->current_action != ACTION_NONE)
+  if (action_matches && !priv->current_cancel_invocation)
+    return TRUE;
+
+  if (priv->current_action != ACTION_NONE || action_matches)
     {
       g_set_error (error, FPRINT_ERROR, FPRINT_ERROR_ALREADY_IN_USE,
                    "Another operation is already in progress");
