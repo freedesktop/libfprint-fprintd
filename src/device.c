@@ -1378,7 +1378,6 @@ static gboolean
 fprint_device_verify_stop (FprintDBusDevice      *dbus_dev,
                            GDBusMethodInvocation *invocation)
 {
-  g_autoptr(SessionData) session = NULL;
   FprintDevice *rdev = FPRINT_DEVICE (dbus_dev);
   FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
 
@@ -1411,20 +1410,12 @@ fprint_device_verify_stop (FprintDBusDevice      *dbus_dev,
       return TRUE;
     }
 
+  priv->current_cancel_invocation = invocation;
   if (priv->current_cancellable)
-    {
-      /* We return only when the action was cancelled */
-      g_cancellable_cancel (priv->current_cancellable);
-      priv->current_cancel_invocation = invocation;
-    }
+    /* We return only when the action was cancelled */
+    g_cancellable_cancel (priv->current_cancellable);
   else
-    {
-      fprint_dbus_device_complete_verify_stop (dbus_dev, invocation);
-      priv->current_action = ACTION_NONE;
-
-      session = session_data_get (priv);
-      session->verify_status_reported = FALSE;
-    }
+    stoppable_action_completed (rdev);
 
   return TRUE;
 }
@@ -1736,17 +1727,12 @@ fprint_device_enroll_stop (FprintDBusDevice      *dbus_dev,
       return TRUE;
     }
 
+  priv->current_cancel_invocation = invocation;
   if (priv->current_cancellable)
-    {
-      /* We return only when the action was cancelled */
-      g_cancellable_cancel (priv->current_cancellable);
-      priv->current_cancel_invocation = invocation;
-    }
+    /* We return only when the action was cancelled */
+    g_cancellable_cancel (priv->current_cancellable);
   else
-    {
-      fprint_dbus_device_complete_enroll_stop (dbus_dev, invocation);
-      priv->current_action = ACTION_NONE;
-    }
+    stoppable_action_completed (rdev);
 
   return TRUE;
 }
