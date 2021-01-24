@@ -1937,7 +1937,7 @@ fprint_device_delete_enrolled_fingers (FprintDBusDevice      *dbus_dev,
     }
   else
     {
-      opened = TRUE;
+      opened = fp_device_is_open (priv->dev);
     }
 
   sender = g_dbus_method_invocation_get_sender (invocation);
