@@ -79,7 +79,7 @@ delete_fingerprints (FprintDBusDevice *dev, const char *username)
         }
       if (!ignore_error)
         {
-          g_print ("ListEnrolledFingers failed: %s\n",
+          g_print ("Failed to delete fingerprints: %s\n",
                    error->message);
           exit (1);
         }
