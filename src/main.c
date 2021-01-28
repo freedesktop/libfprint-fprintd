@@ -218,5 +218,7 @@ main (int argc, char **argv)
   g_bus_unown_name (request_name_ret);
   g_debug ("main loop completed");
 
+  store.deinit ();
+
   return 0;
 }
