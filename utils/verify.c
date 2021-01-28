@@ -134,6 +134,7 @@ struct VerifyState
   GError  *error;
   gboolean started;
   gboolean completed;
+  gboolean match;
 };
 
 static void
@@ -142,6 +143,8 @@ verify_result (GObject *object, const char *result, gboolean done, void *user_da
   struct VerifyState *verify_state = user_data;
 
   g_print ("Verify result: %s (%s)\n", result, done ? "done" : "not done");
+  verify_state->match = g_str_equal (result, "verify-match");
+
   if (done != FALSE)
     verify_state->completed = TRUE;
 }
@@ -195,7 +198,7 @@ proxy_signal_cb (GDBusProxy  *proxy,
     }
 }
 
-static void
+static gboolean
 do_verify (FprintDBusDevice *dev)
 {
   g_autoptr(GError) error = NULL;
@@ -243,6 +246,8 @@ do_verify (FprintDBusDevice *dev)
       g_print ("VerifyStop failed: %s\n", error->message);
       exit (1);
     }
+
+  return verify_state.match;
 }
 
 static void
@@ -270,6 +275,7 @@ main (int argc, char **argv)
   g_autoptr(GError) err = NULL;
   GOptionContext *context;
   const char *username = NULL;
+  gboolean match;
 
   setlocale (LC_ALL, "");
 
@@ -300,7 +306,7 @@ main (int argc, char **argv)
 
   dev = open_device (username);
   find_finger (dev, username);
-  do_verify (dev);
+  match = do_verify (dev);
   release_device (dev);
-  return 0;
+  return match ? EXIT_SUCCESS : EXIT_FAILURE;
 }
