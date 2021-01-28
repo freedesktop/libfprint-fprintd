@@ -33,6 +33,12 @@ static GDBusConnection *connection = NULL;
 static char *finger_name = NULL;
 static char **usernames = NULL;
 
+typedef enum {
+  ENROLL_INCOMPLETE,
+  ENROLL_COMPLETED,
+  ENROLL_FAILED,
+} FprintEnrollStatus;
+
 static void
 create_manager (void)
 {
@@ -95,11 +101,16 @@ open_device (const char *username)
 static void
 enroll_result (GObject *object, const char *result, gboolean done, void *user_data)
 {
-  gboolean *enroll_completed = user_data;
+  FprintEnrollStatus *enroll_status = user_data;
 
   g_print ("Enroll result: %s\n", result);
   if (done != FALSE)
-    *enroll_completed = TRUE;
+    {
+      if (g_str_equal (result, "enroll-completed"))
+        *enroll_status = ENROLL_COMPLETED;
+      else
+        *enroll_status = ENROLL_FAILED;
+    }
 }
 
 static void
@@ -119,16 +130,16 @@ proxy_signal_cb (GDBusProxy  *proxy,
     }
 }
 
-static void
+static FprintEnrollStatus
 do_enroll (FprintDBusDevice *dev)
 {
   g_autoptr(GError) error = NULL;
-  gboolean enroll_completed = FALSE;
+  FprintEnrollStatus enroll_status = ENROLL_INCOMPLETE;
   gboolean found;
   guint i;
 
   g_signal_connect (dev, "g-signal", G_CALLBACK (proxy_signal_cb),
-                    &enroll_completed);
+                    &enroll_status);
 
   found = FALSE;
   for (i = 0; fingers[i].dbus_name != NULL; i++)
@@ -163,16 +174,18 @@ do_enroll (FprintDBusDevice *dev)
       exit (1);
     }
 
-  while (!enroll_completed)
+  while (enroll_status == ENROLL_INCOMPLETE)
     g_main_context_iteration (NULL, TRUE);
 
-  g_signal_handlers_disconnect_by_func (dev, proxy_signal_cb, &enroll_result);
+  g_signal_handlers_disconnect_by_func (dev, proxy_signal_cb, &enroll_status);
 
   if (!fprint_dbus_device_call_enroll_stop_sync (dev, NULL, &error))
     {
       g_print ("EnrollStop failed: %s\n", error->message);
       exit (1);
     }
+
+  return enroll_status;
 }
 
 static void
@@ -197,6 +210,7 @@ main (int argc, char **argv)
 {
   g_autoptr(FprintDBusDevice) dev = NULL;
   GOptionContext *context;
+  FprintEnrollStatus status;
 
   g_autoptr(GError) err = NULL;
 
@@ -217,9 +231,9 @@ main (int argc, char **argv)
   create_manager ();
 
   dev = open_device (usernames ? usernames[0] : "");
-  do_enroll (dev);
+  status = do_enroll (dev);
   release_device (dev);
   g_free (finger_name);
   g_strfreev (usernames);
-  return 0;
+  return status == ENROLL_COMPLETED ? EXIT_SUCCESS : EXIT_FAILURE;
 }
