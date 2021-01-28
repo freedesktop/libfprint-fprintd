@@ -170,7 +170,7 @@ do_enroll (FprintDBusDevice *dev)
 
   if (!fprint_dbus_device_call_enroll_stop_sync (dev, NULL, &error))
     {
-      g_print ("VerifyStop failed: %s\n", error->message);
+      g_print ("EnrollStop failed: %s\n", error->message);
       exit (1);
     }
 }
