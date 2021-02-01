@@ -25,7 +25,7 @@ pam_syslog which means that they will be saved in the systemd journal by default
 =item B<max-tries=I<MAX_TRIES>>
 
 The number of attempts at fingerprint authentication to try before returning an
-authentication failure. The minimum, and default, number of tries is 3.
+authentication failure. The minimum number of tries is 1 while the default is 3.
 
 =item B<timeout=I<TIMEOUT>>
 
