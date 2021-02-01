@@ -780,7 +780,7 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc,
                   pam_syslog (pamh, LOG_DEBUG, "invalid debug value '%s', disabling", value);
                 }
             }
-          else if (str_has_prefix (argv[i], MAX_TRIES_MATCH) && strlen (argv[i]) == strlen (MAX_TRIES_MATCH) + 1)
+          else if (str_has_prefix (argv[i], MAX_TRIES_MATCH) && strlen (argv[i]) > strlen (MAX_TRIES_MATCH))
             {
               max_tries = atoi (argv[i] + strlen (MAX_TRIES_MATCH));
               if (max_tries < 1)
