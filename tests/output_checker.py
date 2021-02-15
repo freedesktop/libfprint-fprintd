@@ -23,6 +23,8 @@ import io
 import re
 import time
 import threading
+import select
+import errno
 
 class OutputChecker(object):
 
@@ -36,7 +38,7 @@ class OutputChecker(object):
 
         # Just to be sure, shouldn't be a problem even if we didn't set it
         fcntl.fcntl(self._pipe_fd_r, fcntl.F_SETFL,
-                    fcntl.fcntl(self._pipe_fd_r, fcntl.F_GETFL) | os.O_CLOEXEC)
+                    fcntl.fcntl(self._pipe_fd_r, fcntl.F_GETFL) | os.O_CLOEXEC | os.O_NONBLOCK)
         fcntl.fcntl(self._pipe_fd_w, fcntl.F_SETFL,
                     fcntl.fcntl(self._pipe_fd_w, fcntl.F_GETFL) | os.O_CLOEXEC)
 
@@ -46,8 +48,20 @@ class OutputChecker(object):
 
     def _copy(self):
         while True:
-            r = os.read(self._pipe_fd_r, 1024)
-            if not r:
+            try:
+                # Be lazy and wake up occasionally in case _pipe_fd_r became invalid
+                # The reason to do this is because os.read() will *not* return if the
+                # FD is forcefully closed.
+                select.select([self._pipe_fd_r], [], [], 0.1)
+
+                r = os.read(self._pipe_fd_r, 1024)
+                if not r:
+                    return
+            except OSError as e:
+                if e.errno == errno.EWOULDBLOCK:
+                    continue
+
+                # We get a bad file descriptor error when the outside closes the FD
                 return
 
             l = r.split(b'\n')
@@ -135,8 +149,17 @@ class OutputChecker(object):
 
     def assert_closed(self, timeout=1):
         self._thread.join(timeout)
+
         if self._thread.is_alive() != False:
             raise AssertionError("OutputCheck: Write side has not been closed yet!")
+
+    def force_close(self):
+
+        fd = self._pipe_fd_r
+        self._pipe_fd_r = -1
+        os.close(fd)
+
+        self._thread.join()
 
     @property
     def fd(self):
@@ -146,3 +169,10 @@ class OutputChecker(object):
         os.close(self._pipe_fd_w)
         self._pipe_fd_w = -1
 
+    def __del__(self):
+        if self._pipe_fd_r > 0:
+            os.close(self._pipe_fd_r)
+        if self._pipe_fd_w > 0:
+            os.close(self._pipe_fd_w)
+
+        assert not self._thread.is_alive()
