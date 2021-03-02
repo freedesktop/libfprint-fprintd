@@ -1334,6 +1334,25 @@ class FPrintdVirtualDeviceClaimedTest(FPrintdVirtualDeviceBaseTest):
         with self.assertFprintError('NoEnrolledPrints'):
             self.device.VerifyStart('(s)', 'right-thumb')
 
+    def test_verify_finger_not_enrolled_stops_verification(self):
+        self.enroll_image('whorl', finger='left-thumb')
+        with self.assertFprintError('NoEnrolledPrints'):
+            self.device.VerifyStart('(s)', 'right-thumb')
+
+        with self.assertFprintError('NoActionInProgress'):
+            self.device.VerifyStop()
+
+    def test_identify_finger_not_enrolled(self):
+        with self.assertFprintError('NoEnrolledPrints'):
+            self.device.VerifyStart('(s)', 'any')
+
+    def test_identify_finger_not_enrolled_stops_verification(self):
+        with self.assertFprintError('NoEnrolledPrints'):
+            self.device.VerifyStart('(s)', 'any')
+
+        with self.assertFprintError('NoActionInProgress'):
+            self.device.VerifyStop()
+
     def test_unallowed_enroll_start(self):
         self._polkitd_obj.SetAllowed([''])
 

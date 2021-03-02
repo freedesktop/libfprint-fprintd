@@ -1457,8 +1457,6 @@ fprint_device_verify_start (FprintDBusDevice      *dbus_dev,
     }
   else
     {
-      priv->current_action = ACTION_VERIFY;
-
       g_debug ("start verification device %d finger %d", priv->id, finger);
 
       store.print_data_load (priv->dev, finger,
@@ -1473,6 +1471,7 @@ fprint_device_verify_start (FprintDBusDevice      *dbus_dev,
           return TRUE;
         }
 
+      priv->current_action = ACTION_VERIFY;
       priv->current_cancellable = g_cancellable_new ();
       priv->verify_data = g_object_ref (print);
       fp_device_verify (priv->dev, print, priv->current_cancellable,
