@@ -1030,10 +1030,38 @@ fprint_device_release (FprintDBusDevice      *dbus_dev,
 
 /* NOTE: This should probably be moved to the storage layer. */
 static GPtrArray *
+load_user_prints (FprintDevice *rdev,
+                  const char   *username)
+{
+  g_autoptr(GPtrArray) res = g_ptr_array_new_with_free_func (g_object_unref);
+  g_autoptr(GSList) fingers = NULL;
+  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+  GSList *l;
+
+  fingers = store.discover_prints (priv->dev, username);
+
+  for (l = fingers; l; l = l->next)
+    {
+      g_autoptr(FpPrint) print = NULL;
+
+      store.print_data_load (priv->dev,
+                             GPOINTER_TO_UINT (l->data),
+                             username,
+                             &print);
+
+      if (!print)
+        continue;
+
+      g_ptr_array_add (res, g_steal_pointer (&print));
+    }
+
+  return g_steal_pointer (&res);
+}
+
+static GPtrArray *
 load_all_prints (FprintDevice *rdev)
 {
   g_autoptr(GPtrArray) res = g_ptr_array_new_with_free_func (g_object_unref);
-  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
   GSList *user, *users = NULL;
 
   users = store.discover_users ();
@@ -1041,25 +1069,9 @@ load_all_prints (FprintDevice *rdev)
   for (user = users; user; user = user->next)
     {
       const char *username = user->data;
-      g_autoptr(GSList) fingers = NULL;
-      GSList *finger;
+      g_autoptr(GPtrArray) prints = load_user_prints (rdev, username);
 
-      fingers = store.discover_prints (priv->dev, username);
-
-      for (finger = fingers; finger; finger = finger->next)
-        {
-          g_autoptr(FpPrint) print = NULL;
-
-          store.print_data_load (priv->dev,
-                                 GPOINTER_TO_UINT (finger->data),
-                                 username,
-                                 &print);
-
-          if (!print)
-            continue;
-
-          g_ptr_array_add (res, g_steal_pointer (&print));
-        }
+      g_ptr_array_extend_and_steal (res, g_steal_pointer (&prints));
     }
 
   g_slist_free_full (users, g_free);
