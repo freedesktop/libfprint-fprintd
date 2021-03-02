@@ -1799,22 +1799,30 @@ fprint_device_list_enrolled_fingers (FprintDBusDevice      *dbus_dev,
                                      const char            *username)
 {
   FprintDevice *rdev = FPRINT_DEVICE (dbus_dev);
-  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
 
   g_autoptr(GPtrArray) ret = NULL;
-  g_autoptr(GSList) prints = NULL;
-  GSList *item;
+  g_autoptr(GPtrArray) prints = NULL;
   const char *sender;
   const char *user;
+  guint i;
 
   sender = g_dbus_method_invocation_get_sender (invocation);
   _fprint_device_add_client (rdev, sender);
 
   user = g_object_get_qdata (G_OBJECT (invocation), quark_auth_user);
   g_assert (user);
-  prints = store.discover_prints (priv->dev, user);
+  prints = load_user_prints (rdev, user);
 
-  if (!prints)
+  ret = g_ptr_array_new ();
+  for (i = 0; i < prints->len; i++)
+    {
+      FpFinger finger = fp_print_get_finger (g_ptr_array_index (prints, i));
+
+      if (finger != FP_FINGER_UNKNOWN)
+        g_ptr_array_add (ret, (char *) fp_finger_to_name (finger));
+    }
+
+  if (!ret->len)
     {
       g_dbus_method_invocation_return_error_literal (invocation,
                                                      FPRINT_ERROR,
@@ -1823,12 +1831,7 @@ fprint_device_list_enrolled_fingers (FprintDBusDevice      *dbus_dev,
       return TRUE;
     }
 
-  ret = g_ptr_array_new ();
-  for (item = prints; item; item = item->next)
-    {
-      FpFinger finger = GPOINTER_TO_UINT (item->data);
-      g_ptr_array_add (ret, (char *) fp_finger_to_name (finger));
-    }
+  /* Add null-termination */
   g_ptr_array_add (ret, NULL);
 
   fprint_dbus_device_complete_list_enrolled_fingers (dbus_dev,

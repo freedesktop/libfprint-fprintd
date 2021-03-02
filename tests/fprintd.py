@@ -950,6 +950,15 @@ class FPrintdVirtualDeviceTest(FPrintdVirtualDeviceBaseTest):
         with self.assertFprintError('NoEnrolledPrints'):
             self.device.ListEnrolledFingers('(s)', 'testuser')
 
+    def test_unclaimed_list_enrolled_fingers_ignores_invalid(self):
+        print_path = self.get_print_file_path('testuser', FPrint.Finger.LEFT_INDEX)
+        os.makedirs(os.path.dirname(print_path), exist_ok=True)
+        with open(print_path, mode='wb') as new_print_file:
+            new_print_file.write(b'I am an invalid print!')
+
+        with self.assertFprintError('NoEnrolledPrints'):
+            self.device.ListEnrolledFingers('(s)', 'testuser')
+
     def test_claim_device_open_fail(self):
         os.rename(self.tmpdir, self.tmpdir + '-moved')
         self.addCleanup(os.rename, self.tmpdir + '-moved', self.tmpdir)
