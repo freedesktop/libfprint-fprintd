@@ -189,7 +189,7 @@ if get_option('pam')
     output += '  PAM module directory: ' + pam_modules_dir
 endif
 output += '\nOptional features:\n'
-output += '  PAM module: ' + pam_dep.found().to_string()
+output += '  PAM module: ' + (pam_dep.found() and get_option('pam')).to_string()
 output += '  Manuals: ' + get_option('man').to_string()
 output += '  GTK Doc: ' + get_option('gtk_doc').to_string()
 output += '  XML Linter ' + xmllint.found().to_string()
