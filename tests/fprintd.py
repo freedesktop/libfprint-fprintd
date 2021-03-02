@@ -930,6 +930,11 @@ class FPrintdVirtualDeviceTest(FPrintdVirtualDeviceBaseTest):
             self.device.DeleteEnrolledFingers2()
 
     def test_unclaimed_list_enrolled_fingers(self):
+        self.enroll_image('whorl', finger='left-thumb', claim_user='testuser')
+        self.assertEqual(self.device.ListEnrolledFingers('(s)', 'testuser'),
+            ['left-thumb'])
+
+    def test_unclaimed_list_enrolled_fingers_error(self):
         with self.assertFprintError('NoEnrolledPrints'):
             self.device.ListEnrolledFingers('(s)', 'testuser')
 
