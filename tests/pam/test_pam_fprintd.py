@@ -177,7 +177,7 @@ class TestPamFprintd(dbusmock.DBusTestCase):
         ]
         self.device_mock.SetVerifyScript(script)
 
-        tc = pypamtest.TestCase(pypamtest.PAMTEST_AUTHENTICATE, expected_rv=PAM_USER_UNKNOWN)
+        tc = pypamtest.TestCase(pypamtest.PAMTEST_AUTHENTICATE, expected_rv=PAM_AUTHINFO_UNAVAIL)
         res = pypamtest.run_pamtest("toto", "fprintd-pam-test", [tc], [ 'unused' ])
 
     def test_pam_fprintd_blocks_unexpected_auth(self):
