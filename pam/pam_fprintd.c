@@ -351,7 +351,7 @@ verify_started_cb (sd_bus_message *m,
       if (sd_bus_error_has_name (error, "net.reactivated.Fprint.Error.NoEnrolledPrints"))
         {
           pam_syslog (data->pamh, LOG_DEBUG, "No prints enrolled");
-          data->verify_ret = PAM_USER_UNKNOWN;
+          data->verify_ret = PAM_AUTHINFO_UNAVAIL;
         }
       else
         {
