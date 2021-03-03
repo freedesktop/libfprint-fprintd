@@ -61,17 +61,8 @@ test_indent:
     - "! git status -s | grep -q ."
 
 build_stable:
-  extends: .fprintd_build_preconditions
-  stage: build
-  script:
-    - meson _build
-    - ninja -C _build -v
-    - ninja -C _build -v install
-
-build_dev:
   extends:
     - .fprintd_build_preconditions
-    - .install_libfprint_dev
   stage: build
   script:
     - meson _build --werror -Dgtk_doc=true
@@ -83,10 +74,9 @@ build_dev:
     paths:
       - _build/meson-logs/*.txt
 
-test_dev:
+test_stable:
   extends:
     - .fprintd_build_preconditions
-    - .install_libfprint_dev
   stage: test
   script:
     - meson _build -Db_coverage=true
@@ -99,10 +89,9 @@ test_dev:
     paths:
       - _build/meson-logs
 
-test_dev_with_sanitizer:
+test_stable_with_sanitizer:
   extends:
     - .fprintd_build_preconditions
-    - .install_libfprint_dev
   stage: test
   script:
     - meson _build -Db_sanitize=address
