@@ -43,7 +43,7 @@ stages:
   before_script:
     # Make sure we don't build or link against the system libfprint
     - dnf remove -y libfprint-devel
-    - git clone https://gitlab.freedesktop.org/libfprint/libfprint.git
+    - git clone -b libfprint-1-90 https://gitlab.freedesktop.org/libfprint/libfprint.git
     - cd libfprint
     - meson . _build --prefix=/usr -Ddrivers=virtual_image -Ddoc=false
     - ninja -C _build
