@@ -24,8 +24,13 @@
 #include <glib/gi18n.h>
 #include <fprint.h>
 #include <glib-object.h>
+#include <gio/gunixfdlist.h>
 
 #include "fprintd.h"
+
+#define LOGIND_BUS_NAME "org.freedesktop.login1"
+#define LOGIND_IFACE_NAME "org.freedesktop.login1.Manager"
+#define LOGIND_OBJ_PATH "/org/freedesktop/login1"
 
 static void fprint_manager_constructed (GObject *object);
 static gboolean fprint_manager_get_devices (FprintManager *manager,
@@ -43,6 +48,9 @@ typedef struct
   FpContext          *context;
   gboolean            no_timeout;
   guint               timeout_id;
+  gint                prepare_for_sleep_pending;
+  guint               prepare_for_sleep_id;
+  gint                sleep_inhibit_fd;
 } FprintManagerPrivate;
 
 G_DEFINE_TYPE_WITH_CODE (FprintManager, fprint_manager, G_TYPE_OBJECT, G_ADD_PRIVATE (FprintManager))
@@ -59,6 +67,10 @@ static void
 fprint_manager_finalize (GObject *object)
 {
   FprintManagerPrivate *priv = fprint_manager_get_instance_private (FPRINT_MANAGER (object));
+
+  if (priv->prepare_for_sleep_id)
+    g_dbus_connection_signal_unsubscribe (priv->connection,
+                                          priv->prepare_for_sleep_id);
 
   g_clear_object (&priv->object_manager);
   g_clear_object (&priv->dbus_manager);
@@ -228,6 +240,155 @@ handle_get_default_device (FprintManager         *manager,
 }
 
 static void
+fprint_device_suspend_cb (GObject      *source_object,
+                          GAsyncResult *res,
+                          gpointer      user_data)
+{
+  g_autoptr(GError) error = NULL;
+  FprintManager *manager = FPRINT_MANAGER (user_data);
+  FprintManagerPrivate *priv = fprint_manager_get_instance_private (manager);
+
+  /* There is a dummy call with NULL source object, fetch result
+   * (we do not really need to, as we do not care about it)
+   */
+  if (source_object != NULL)
+    {
+      fprint_device_suspend_finish (FPRINT_DEVICE (source_object), res, &error);
+      if (error)
+        {
+          if (!g_error_matches (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_NOT_OPEN) &&
+              !g_error_matches (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_NOT_SUPPORTED))
+            g_message ("Unexpected error while suspending device: %s", error->message);
+        }
+    }
+
+  priv->prepare_for_sleep_pending -= 1;
+
+  /* Close FD when all devices are prepared for sleeping. */
+  if (priv->prepare_for_sleep_pending == 0)
+    {
+      if (priv->sleep_inhibit_fd >= 0)
+        close (priv->sleep_inhibit_fd);
+      priv->sleep_inhibit_fd = -1;
+      g_debug ("Released delay inhibitor for sleep.");
+    }
+
+  g_object_unref (manager);
+}
+
+static void
+logind_sleep_inhibit_cb (GObject      *source_object,
+                         GAsyncResult *res,
+                         gpointer      user_data)
+{
+  g_autoptr(GVariant) data = NULL;
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GUnixFDList) out_fd_list = NULL;
+  g_autoptr(FprintManager) manager = FPRINT_MANAGER (user_data);
+  FprintManagerPrivate *priv = fprint_manager_get_instance_private (manager);
+  gint fd_offset;
+
+  data = g_dbus_connection_call_with_unix_fd_list_finish (priv->connection, &out_fd_list, res, &error);
+
+  if (!data)
+    {
+      g_warning ("Failed to install a sleep delay inhibitor: %s", error->message);
+      return;
+    }
+
+  if (priv->sleep_inhibit_fd >= 0)
+    close (priv->sleep_inhibit_fd);
+
+  g_debug ("Got delay inhibitor for sleep.");
+
+  g_variant_get (data, "(h)", &fd_offset);
+  priv->sleep_inhibit_fd = g_unix_fd_list_get (out_fd_list, fd_offset, NULL);
+}
+
+static void
+handle_prepare_for_sleep_signal (GDBusConnection *connection,
+                                 const gchar     *sender_name,
+                                 const gchar     *object_path,
+                                 const gchar     *interface_name,
+                                 const gchar     *signal_name,
+                                 GVariant        *parameters,
+                                 gpointer         user_data)
+{
+  g_autolist (GDBusObject) devices = NULL;
+  FprintManager *manager = FPRINT_MANAGER (user_data);
+  FprintManagerPrivate *priv = fprint_manager_get_instance_private (manager);
+  gboolean prepare_for_sleep;
+  GList *l;
+
+  if (!g_variant_check_format_string (parameters, "(b)", FALSE))
+    {
+      g_warning ("Received incorrect parameter for PrepareForSleep signal");
+      return;
+    }
+
+  g_variant_get (parameters, "(b)", &prepare_for_sleep);
+
+  /* Initialize to 1 so that we can be sure we are not hitting 0 temporarily */
+  if (prepare_for_sleep)
+    priv->prepare_for_sleep_pending = 1;
+
+  devices = g_dbus_object_manager_get_objects (priv->object_manager);
+
+  g_debug ("Preparing devices for %s", prepare_for_sleep ? "sleep" : "resume");
+
+  for (l = devices; l != NULL; l = l->next)
+    {
+      g_autoptr(FprintDevice) dev = NULL;
+      FprintDBusObjectSkeleton *object = l->data;
+
+      dev = fprint_dbus_object_skeleton_get_device (object);
+
+      if (prepare_for_sleep)
+        {
+          priv->prepare_for_sleep_pending += 1;
+          g_object_ref (manager);
+          fprint_device_suspend (dev, fprint_device_suspend_cb, manager);
+        }
+      else
+        {
+          fprint_device_resume (dev, NULL, NULL);
+        }
+    }
+
+  if (prepare_for_sleep)
+    {
+      /* "Notify" the initial dummy device we added, handling no devices that suspending */
+      g_object_ref (manager);
+      fprint_device_suspend_cb (NULL, NULL, manager);
+    }
+  else
+    {
+      GVariant *arg = NULL;
+
+      arg = g_variant_new ("(ssss)",
+                           "sleep",
+                           "net.reactivated.Fprint",
+                           "Suspend fingerprint readers",
+                           "delay");
+
+      /* Grab a sleep inhibitor. */
+      g_dbus_connection_call_with_unix_fd_list (priv->connection,
+                                                LOGIND_BUS_NAME,
+                                                LOGIND_OBJ_PATH,
+                                                LOGIND_IFACE_NAME,
+                                                "Inhibit",
+                                                arg,
+                                                G_VARIANT_TYPE ("(h)"),
+                                                G_DBUS_CALL_FLAGS_NONE,
+                                                -1,
+                                                NULL,
+                                                NULL,
+                                                logind_sleep_inhibit_cb,
+                                                g_object_ref (manager));
+    }
+}
+
+static void
 device_added_cb (FprintManager *manager, FpDevice *device, FpContext *context)
 {
   FprintManagerPrivate *priv = fprint_manager_get_instance_private (manager);
@@ -290,6 +451,7 @@ device_removed_cb (FprintManager *manager, FpDevice *device, FpContext *context)
 static void
 fprint_manager_constructed (GObject *object)
 {
+  g_autoptr(GVariant) param_false = NULL;
   FprintManager *manager = FPRINT_MANAGER (object);
   FprintManagerPrivate *priv = fprint_manager_get_instance_private (manager);
   GDBusObjectManagerServer *object_manager_server;
@@ -318,6 +480,20 @@ fprint_manager_constructed (GObject *object)
 
   g_dbus_object_manager_server_set_connection (object_manager_server,
                                                priv->connection);
+
+  priv->prepare_for_sleep_id = g_dbus_connection_signal_subscribe (priv->connection,
+                                                                   LOGIND_BUS_NAME,
+                                                                   LOGIND_IFACE_NAME,
+                                                                   "PrepareForSleep",
+                                                                   LOGIND_OBJ_PATH,
+                                                                   NULL,
+                                                                   G_DBUS_SIGNAL_FLAGS_NONE,
+                                                                   handle_prepare_for_sleep_signal,
+                                                                   manager,
+                                                                   NULL);
+  /* Fake a resume as that triggers the inhibitor to be taken. */
+  param_false = g_variant_new ("(b)", FALSE);
+  handle_prepare_for_sleep_signal (priv->connection, NULL, NULL, NULL, NULL, param_false, manager);
 
   /* And register the signals for initial enumeration and hotplug. */
   g_signal_connect_object (priv->context,

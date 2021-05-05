@@ -455,6 +455,81 @@ _fprint_device_get_id (FprintDevice *rdev)
   return priv->id;
 }
 
+static void
+suspend_cb (GObject      *source_obj,
+            GAsyncResult *res,
+            gpointer      user_data)
+{
+  g_autoptr(GTask) task = user_data;
+  GError *error = NULL;
+
+  fp_device_suspend_finish (FP_DEVICE (source_obj), res, &error);
+  if (error)
+    g_task_return_error (task, error);
+  else
+    g_task_return_boolean (task, TRUE);
+}
+
+static void
+resume_cb (GObject      *source_obj,
+           GAsyncResult *res,
+           gpointer      user_data)
+{
+  g_autoptr(GTask) task = user_data;
+  GError *error = NULL;
+
+  fp_device_suspend_finish (FP_DEVICE (source_obj), res, &error);
+  if (error)
+    g_task_return_error (task, error);
+  else
+    g_task_return_boolean (task, TRUE);
+}
+
+void
+fprint_device_suspend (FprintDevice       *rdev,
+                       GAsyncReadyCallback callback,
+                       void               *user_data)
+{
+  GTask *task = NULL;
+  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+
+  /* Just forward to libfprint. */
+
+  task = g_task_new (rdev, NULL, callback, user_data);
+  fp_device_suspend (priv->dev, suspend_cb, task);
+}
+
+void
+fprint_device_resume (FprintDevice       *rdev,
+                      GAsyncReadyCallback callback,
+                      void               *user_data)
+{
+  GTask *task = NULL;
+  FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+
+  /* Just forward to libfprint. */
+
+  task = g_task_new (rdev, NULL, callback, user_data);
+  fp_device_resume (priv->dev, resume_cb, task);
+}
+
+void
+fprint_device_suspend_finish (FprintDevice *rdev,
+                              GAsyncResult *res,
+                              GError      **error)
+{
+  g_task_propagate_boolean (G_TASK (res), error);
+}
+
+void
+fprint_device_resume_finish (FprintDevice *rdev,
+                             GAsyncResult *res,
+                             GError      **error)
+{
+  g_task_propagate_boolean (G_TASK (res), error);
+}
+
+
 static const char *
 fp_finger_to_name (FpFinger finger)
 {

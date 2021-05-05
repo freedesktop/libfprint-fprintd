@@ -233,10 +233,15 @@ class FPrintdTest(dbusmock.DBusTestCase):
                 argv.insert(2, '--suppressions=%s' % valgrind)
             self.valgrind = True
         self.kill_daemon = False
+        self.daemon_log = OutputChecker()
         self.daemon = subprocess.Popen(argv,
                                        env=env,
-                                       stdout=None,
+                                       stdout=self.daemon_log.fd,
                                        stderr=subprocess.STDOUT)
+        self.daemon_log.writer_attached()
+
+        #subprocess.Popen(['/usr/bin/dbus-monitor', '--system'])
+
         self.addCleanup(self.daemon_stop)
 
         timeout_count = timeout * 10
@@ -295,6 +300,8 @@ class FPrintdTest(dbusmock.DBusTestCase):
                     self.daemon.kill()
                 else:
                     raise(e)
+
+            self.daemon_log.assert_closed()
 
             if not self.kill_daemon:
                 self.assertLess(self.daemon.returncode, 128)
@@ -577,7 +584,21 @@ class FPrintdVirtualDeviceBaseTest(FPrintdVirtualImageDeviceBaseTests):
         self.manager = None
         self.device = None
         self.polkitd_start()
+
+        fifo_path = os.path.join(self.tmpdir, 'logind_inhibit_fifo')
+        os.mkfifo(fifo_path)
+        self.logind_inhibit_fifo = os.open(fifo_path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+        # EOF without a writer, BlockingIOError with a writer
+        self.assertFalse(self.holds_inhibitor())
+
+        self.logind, self.logind_obj = self.spawn_server_template('logind', { })
+        self.logind_obj.AddMethod('org.freedesktop.login1.Manager', 'Inhibit', 'ssss', 'h',
+                                  'ret = os.open("%s", os.O_WRONLY)\n' % fifo_path +
+                                  'from gi.repository import GLib\n' +
+                                  'GLib.idle_add(lambda fd: os.close(fd), ret)')
         self.daemon_start(self.driver_name)
+
+        self.wait_got_delay_inhibitor()
 
         if self.device is None:
             self.skipTest("Need {} device to run the test".format(self.device_driver))
@@ -627,6 +648,8 @@ class FPrintdVirtualDeviceBaseTest(FPrintdVirtualImageDeviceBaseTests):
         self.device = None
         self.manager = None
 
+        os.close(self.logind_inhibit_fifo)
+
         super().tearDown()
 
     def try_release(self):
@@ -657,6 +680,23 @@ class FPrintdVirtualDeviceBaseTest(FPrintdVirtualImageDeviceBaseTests):
 
         if expected is not None:
             self.assertEqual(self._last_result, expected)
+
+    def holds_inhibitor(self):
+        try:
+            if os.read(self.logind_inhibit_fifo, 1) == b'':
+                return False
+        except BlockingIOError:
+            return True
+
+        raise AssertionError("logind inhibitor fifo in unexpected state")
+
+    def wait_got_delay_inhibitor(self, timeout=0):
+        self.daemon_log.check_line('Got delay inhibitor for sleep', timeout=timeout)
+        self.assertTrue(self.holds_inhibitor())
+
+    def wait_released_delay_inhibitor(self, timeout=0):
+        self.daemon_log.check_line('Released delay inhibitor for sleep', timeout=timeout)
+        self.assertFalse(self.holds_inhibitor())
 
     def enroll_image(self, img, device=None, finger='right-index-finger',
                      expected_result='enroll-completed', claim_user=None,
@@ -1523,6 +1563,72 @@ class FPrintdVirtualDeviceTest(FPrintdVirtualDeviceBaseTest):
             self.wait_for_device_reply(expected_replies=2)
 
         self.assertIn(GLib.Variant('()', ()), self.get_all_async_replies())
+
+    def test_suspend_inhibit_unclaimed(self):
+        self.logind_obj.EmitSignal("", "PrepareForSleep", "b", [True])
+
+        self.daemon_log.check_line('Preparing devices for sleep', timeout=1)
+        self.wait_released_delay_inhibitor(timeout=1)
+
+        self.logind_obj.EmitSignal("", "PrepareForSleep", "b", [False])
+
+        self.daemon_log.check_line('Preparing devices for resume', timeout=1)
+        self.wait_got_delay_inhibitor(timeout=1)
+
+    def test_suspend_inhibit_claimed(self):
+        self.device.Claim('(s)', 'testuser')
+
+        self.logind_obj.EmitSignal("", "PrepareForSleep", "b", [True])
+
+        self.daemon_log.check_line('Preparing devices for sleep', timeout=1)
+        self.wait_released_delay_inhibitor(timeout=1)
+
+        self.logind_obj.EmitSignal("", "PrepareForSleep", "b", [False])
+
+        self.daemon_log.check_line('Preparing devices for resume', timeout=1)
+        self.wait_got_delay_inhibitor(timeout=1)
+
+        self.device.Release()
+
+    def test_suspend_inhibit_cancels_enroll(self):
+        self.device.Claim('(s)', 'testuser')
+
+        self.device.EnrollStart('(s)', 'right-thumb')
+
+        # Now prepare for sleep, which will trigger an internal cancellation
+        self.logind_obj.EmitSignal("", "PrepareForSleep", "b", [True])
+
+        self.daemon_log.check_line('Preparing devices for sleep', timeout=1)
+        self.wait_for_result(expected='enroll-unknown-error')
+        self.wait_released_delay_inhibitor(timeout=1)
+
+        self.assertEqual(os.read(self.logind_inhibit_fifo, 1), b'')
+
+        self.logind_obj.EmitSignal("", "PrepareForSleep", "b", [False])
+
+        self.daemon_log.check_line('Preparing devices for resume', timeout=1)
+        self.wait_got_delay_inhibitor(timeout=1)
+
+        self.device.Release()
+
+    def test_suspend_prevents_enroll(self):
+        self.device.Claim('(s)', 'testuser')
+
+        # Now prepare for sleep, which will trigger an internal cancellation
+        self.logind_obj.EmitSignal("", "PrepareForSleep", "b", [True])
+
+        self.daemon_log.check_line('Preparing devices for sleep', timeout=1)
+        self.wait_released_delay_inhibitor(timeout=1)
+
+        self.device.EnrollStart('(s)', 'right-thumb')
+        self.wait_for_result(expected='enroll-unknown-error')
+
+        self.logind_obj.EmitSignal("", "PrepareForSleep", "b", [False])
+
+        self.daemon_log.check_line('Preparing devices for resume', timeout=1)
+        self.wait_got_delay_inhibitor(timeout=1)
+
+        self.device.Release()
 
 
 class FPrintdVirtualDeviceStorageTest(FPrintdVirtualStorageDeviceBaseTest,

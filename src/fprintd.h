@@ -95,6 +95,22 @@ struct _FprintDevice
 
 FprintDevice *fprint_device_new (FpDevice *dev);
 guint32 _fprint_device_get_id (FprintDevice *rdev);
+
+void fprint_device_suspend (FprintDevice       *rdev,
+                            GAsyncReadyCallback callback,
+                            void               *user_data);
+void fprint_device_resume (FprintDevice       *rdev,
+                           GAsyncReadyCallback callback,
+                           void               *user_data);
+
+void fprint_device_suspend_finish (FprintDevice *rdev,
+                                   GAsyncResult *result,
+                                   GError      **error);
+void fprint_device_resume_finish (FprintDevice *rdev,
+                                  GAsyncResult *res,
+                                  GError      **error);
+
+
 /* Print */
 /* TODO */
 
