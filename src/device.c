@@ -54,11 +54,6 @@ static gboolean action_authorization_handler (GDBusInterfaceSkeleton *,
                                               GDBusMethodInvocation *,
                                               gpointer user_data);
 
-static gboolean delete_enrolled_fingers (FprintDevice *rdev,
-                                         const char   *user,
-                                         FpFinger      finger,
-                                         GError      **error);
-
 static GQuark quark_auth_user = 0;
 
 typedef enum {
@@ -1984,19 +1979,20 @@ fprint_device_enroll_start (FprintDBusDevice      *dbus_dev,
   store.print_data_load (priv->dev, finger,
                          session->username, &existing_print);
 
+  if (existing_print)
+    {
+      g_set_error (&error, FPRINT_ERROR, FPRINT_ERROR_FINGER_ALREADY_ENROLLED,
+                   "Finger %d has already been enrolled for user %s", finger, session->username);
+      g_dbus_method_invocation_return_gerror (invocation,
+                                              error);
+      return TRUE;
+    }
+
+
   if (!can_start_action (rdev, &error))
     {
       g_dbus_method_invocation_return_gerror (invocation, error);
       return TRUE;
-    }
-
-  if (existing_print)
-    {
-      if (!delete_enrolled_fingers (rdev, session->username, finger, &error))
-        {
-          g_dbus_method_invocation_return_gerror (invocation, error);
-          return TRUE;
-        }
     }
 
   g_debug ("start enrollment device %d finger %d", priv->id, finger);

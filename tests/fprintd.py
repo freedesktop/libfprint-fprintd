@@ -2315,21 +2315,9 @@ class FPrintdVirtualDeviceEnrollTests(FPrintdVirtualDeviceBaseTest):
     def test_enroll_already_enrolled_finger(self):
         self.enroll_image('whorl', start=False)
 
-        # We can enroll a new image deleting the first
-        self.device.EnrollStart('(s)', 'left-middle-finger')
-        self.enroll_image('arch', start=False)
         self.stop_on_teardown = False
-
-        # If we verify, 'arch' will match, 'whorl' will not match
-        self.device.VerifyStart('(s)', 'any')
-        self.send_image('whorl')
-        self.assertVerifyNoMatch()
-        self.device.VerifyStop()
-
-        self.device.VerifyStart('(s)', 'any')
-        self.send_image('arch')
-        self.assertVerifyMatch()
-        self.device.VerifyStop()
+        with self.assertFprintError('FingerAlreadyEnrolled'):
+            self.device.EnrollStart('(s)', 'left-middle-finger')
 
     def test_enroll_duplicate_image(self):
         self.enroll_image('whorl', finger='left-thumb', start=False)
